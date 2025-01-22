@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import StarRating from "./StarRating";
+import NavBar from "./components/NavBar";
+import Loader from "./components/Loader";
+import ErrorMessage from "./components/ErrorMessage";
+import Search from "./components/Search";
+import NumResults from "./components/NumResults";
+import Box from "./components/Box";
+import MovieList from "./components/MovieList";
+import MovieDetails from "./components/MovieDetails";
+// import StarRating from "./StarRating";
+import WatchedSummary from "./components/WatchedSummary";
+import WatchedMoviesList from "./components/WatchedMoviesList";
 
 // const tempMovieData = [
 //   {
@@ -48,8 +58,8 @@ import StarRating from "./StarRating";
 //   },
 // ];
 
-const average = (arr) =>
-  arr.reduce((acc, cur, i, arr) => acc + cur / arr.length, 0);
+// const average = (arr) =>
+//   arr.reduce((acc, cur, i, arr) => acc + cur / arr.length, 0);
 
 const KEY = "36968d25";
 
@@ -58,7 +68,7 @@ export default function App() {
   // const [watched, setWatched] = useState(tempWatchedData);
 
   const [movies, setMovies] = useState([]);
-  const [watched, setWatched] = useState([]);
+  // const [watched, setWatched] = useState([]);
 
   // adding a loading state
   const [isLoading, setIsLoading] = useState(false);
@@ -70,16 +80,23 @@ export default function App() {
   //const query = "KSDKLFPO";
 
   // to search for movies based on the user input, lift the state up from Search function to here and pass them as props to the component
-  // const [query, setQuery] = useState("");
-  const [query, setQuery] = useState("inception");
+  const [query, setQuery] = useState("");
+  // const [query, setQuery] = useState("inception");
 
   // displaying movie details based on selected movie
   const [selectedId, setSelectedId] = useState(null);
 
+  // usestate also accepts a callback function w/c will be used here to ensure the selected watched movies stays in the watch list even after refreshing the page. this type of state is used when the initial state depends on some computation e.g getting data from the local storage. this function is called only on initial render and it must be pure(i.e it musn't accept any argument)
+  const [watched, setWatched] = useState(function () {
+    const storedValue = localStorage.getItem("watched")
+    // since we converted it to string before to store it in the local storage, we need to convert it to the previous for so it can be read by react using json.parse
+    return JSON.parse(storedValue)
+  });
+
   function handleSelectedMovie(id) {
     // setSelectedId(id)
 
-    // to close the movie details when another movie is selected
+    // to close the movie details when another movie is selected. below is updating a state based on the current state
     setSelectedId((selectedId) => (id === selectedId ? null : id));
   }
 
@@ -90,12 +107,20 @@ export default function App() {
   // function to add watched movie
   function handleAddWatched(movie) {
     setWatched((watched) => [...watched, movie]);
+
+    // storing the added watched movie to the local storage. u can also do it using useeffect. json.stringify-to convert the value(in the key-value pair) to a string which is how it is meant to be. watched is the name of the data u want to store, while [...watched, movie] is the actual data u want to store(value) w/c is not a string and needs to be converted to a string with json.stringify
+    // localStorage.setItem("watched", JSON.stringify([...watched, movie]));
   }
 
   // function to delete watched movie
   function handleDeleteWatchedMovie(id) {
     setWatched((watched) => watched.filter((movie) => movie.imdbID !== id));
   }
+
+  // using useEffect to store the movies. this is better than using the first instance cos when you want to delete the movie since the watched state is already synchronised with the local storage you don't need to add another function to delete from the local storage, once it is deleted on the watched list, it is also deleted from the local storage
+  useEffect(function() {
+    localStorage.setItem("watched", JSON.stringify(watched))
+  }, [watched])
 
   // instead of passing props deep down to different components b4 it gets to where it will be used(prop drilling), u can use component composition. for e.g, instead of this(<NavBar movies={movies} />) we can make navbar to be reusable then pass in children as props
 
@@ -111,6 +136,9 @@ export default function App() {
   // using async await. you cant use async in the callback function in the useeffect, instead it will be used inside another function. then call the function afterward
   useEffect(
     function () {
+      // the cleanup function to handle http request, such that the request will be fetch when the user is done inputing the movie title. we use abort controller(browser api, has nothing to do with react, just the browser just like fetch). connecting the abort controller with the fetch add the signal
+      const controller = new AbortController();
+
       async function fetchMovies() {
         // setIsLoading(true)
         // const res = await fetch(
@@ -125,8 +153,13 @@ export default function App() {
           setIsLoading(true);
           // to remove the error when the user has not searched for the movie
           setError("");
+          // const res = await fetch(
+          //   `https://www.omdbapi.com/?apikey=${KEY}&s=${query}`
+          // );
+
           const res = await fetch(
-            `https://www.omdbapi.com/?apikey=${KEY}&s=${query}`
+            `https://www.omdbapi.com/?apikey=${KEY}&s=${query}`,
+            { signal: controller.signal }
           );
 
           // handling error if there is no internet coonection
@@ -138,10 +171,14 @@ export default function App() {
           if (data.Response === "False") throw new Error("Movie not found!");
 
           setMovies(data.Search);
+          setError("");
           // setIsLoading(false) to remove the isloading if you can't get the movies move it to finally
         } catch (err) {
           console.error(err.message);
-          setError(err.message);
+          // setError(err.message);
+          if (err.name !== "AbortError") {
+            setError(err.message);
+          }
         } finally {
           setIsLoading(false);
         }
@@ -160,7 +197,15 @@ export default function App() {
         return;
       }
 
+      // to ensure that when you click on a movie and the details is shown and when u want to search for another movie, the previous movie details closes
+      handleCloseSelectedMovie();
+
       fetchMovies();
+
+      // cleanup function for data fetching
+      return function () {
+        controller.abort(); // but this will throw an error as the user searches for movie cos as the user types in another letter, the previous request is aborted which is an error in js which is caught and displayed on the screen, to avoid this- if(err.name !== AbortError) - check above
+      };
     },
     [query]
   );
@@ -218,7 +263,10 @@ export default function App() {
           ) : (
             <>
               <WatchedSummary watched={watched} />
-              <WatchedMoviesList watched={watched} onDelete={handleDeleteWatchedMovie} />
+              <WatchedMoviesList
+                watched={watched}
+                onDelete={handleDeleteWatchedMovie}
+              />
             </>
           )}
         </Box>
@@ -234,57 +282,6 @@ export default function App() {
         }/>
       </Main> */}
     </>
-  );
-}
-
-// Nav bar
-function NavBar({ children }) {
-  return (
-    <nav className="nav-bar">
-      <Logo />
-      {children}
-    </nav>
-  );
-}
-
-function Loader() {
-  return <p className="loader">Loading...</p>;
-}
-
-function ErrorMessage({ message }) {
-  return (
-    <p className="error">
-      <span>⛔</span> {message}
-    </p>
-  );
-}
-
-function Logo() {
-  return (
-    <div className="logo">
-      <span role="img">🍿</span>
-      <h1>usePopcorn</h1>
-    </div>
-  );
-}
-
-function Search({ query, setQuery }) {
-  return (
-    <input
-      className="search"
-      type="text"
-      placeholder="Search movies..."
-      value={query}
-      onChange={(e) => setQuery(e.target.value)}
-    />
-  );
-}
-
-function NumResults({ movies }) {
-  return (
-    <p className="num-results">
-      Found <strong>{movies.length}</strong> results
-    </p>
   );
 }
 
@@ -312,22 +309,6 @@ function Main({ children }) {
 //   );
 // }
 
-// creating one reusable box for listbox and watchedbox
-function Box({ children }) {
-  const [isOpen, setIsOpen] = useState(true);
-  return (
-    <div className="box">
-      {/* toggling the button */}
-      <button className="btn-toggle" onClick={() => setIsOpen((open) => !open)}>
-        {isOpen ? "–" : "+"}
-      </button>
-      {/* {isOpen1 && <MovieList movies={movies} />} */}
-
-      {isOpen && children}
-    </div>
-  );
-}
-
 // function Box({ element }) {
 //   const [isOpen, setIsOpen] = useState(true);
 //   return (
@@ -342,31 +323,6 @@ function Box({ children }) {
 //     </div>
 //   );
 // }
-
-function MovieList({ movies, onSelectMovie }) {
-  return (
-    <ul className="list list-movies">
-      {movies?.map((movie) => (
-        <Movie movie={movie} key={movie.imdbID} onSelectMovie={onSelectMovie} />
-      ))}
-    </ul>
-  );
-}
-
-function Movie({ movie, onSelectMovie }) {
-  return (
-    <li onClick={() => onSelectMovie(movie.imdbID)}>
-      <img src={movie.Poster} alt={`${movie.Title} poster`} />
-      <h3>{movie.Title}</h3>
-      <div>
-        <p>
-          <span>🗓</span>
-          <span>{movie.Year}</span>
-        </p>
-      </div>
-    </li>
-  );
-}
 
 // movies watched
 // function WatchedBox() {
@@ -390,217 +346,3 @@ function Movie({ movie, onSelectMovie }) {
 //     </div>
 //   );
 // }
-
-function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
-  const [movie, setMovie] = useState({});
-
-  // adding the loading state
-  const [isLoading, setIsLoading] = useState(false);
-
-  // update the rating selected
-  const [userRating, setUserRating] = useState("");
-
-  // destructuring the data(object) gotten to change it to small letters instead of the initial capitalized form
-  const {
-    Title: title,
-    Year: year,
-    Poster: poster,
-    Runtime: runtime,
-    imdbRating,
-    Plot: plot,
-    Released: released,
-    Actors: actors,
-    Director: director,
-    Genre: genre,
-  } = movie;
-
-  // console.log(title, released)
-
-  // to display the stars and add to list button if the user hasn't selected the movie previously. for this we need the watched array
-  const isWatched = watched.map((movie) => movie.imdbID).includes(selectedId);
-  // console.log(isWatched);
-
-  // to display the number of rating given
-  const watchedUserRating = watched.find(
-    (movie) => movie.imdbID === selectedId
-  )?.userRating;
-
-  function handleAdd() {
-    const newWatchedMovie = {
-      imdbID: selectedId,
-      title,
-      year,
-      poster,
-      imdbRating: Number(imdbRating),
-      runtime: Number(runtime.split(" ").at(0)),
-      userRating,
-    };
-
-    onAddWatched(newWatchedMovie);
-    // closes the movie details when u click on the add list button
-    onCloseMovie();
-  }
-
-  useEffect(
-    function () {
-      // to display the selected movie details, u need to fetch the api with a different search query(i), that conatins all the details u need to be displayed
-
-      async function getMovieDetails() {
-        setIsLoading(true);
-        const res = await fetch(
-          `https://www.omdbapi.com/?apikey=${KEY}&i=${selectedId}`
-        );
-        const data = await res.json();
-        // console.log(data);
-        setMovie(data);
-        setIsLoading(false);
-      }
-      getMovieDetails();
-      // to ensure that when u select another movie, the details will be diplayed, add the selected id into the dependency array so wen it changes, the useeffect hook will be re-rendered with the current selected id
-    },
-    [selectedId]
-  );
-
-  // updating the movie title as soon as another movie is selected
-  // useEffect(function() {
-  //   // handling when the movie has not been gotten
-  //   if(!title) return
-  //   document.title = `Movie | ${title}`
-  // }, [title])
-
-  // cleanup function is the function dat we can RETURN from an effect. it runs b4 d effect is executed again and after a component has unmounted. it is necessary whenever the side effects keeps happening after the component has been re-rendered or unmounted e.g a http request that was made needs to be cancelled b4 anoda is been made to avoid bugs(race condition). it also runs after the re-render
-
-  useEffect(function() {
-    // handling when the movie has not been gotten
-    if(!title) return
-    document.title = `Movie | ${title}`
-
-    // cleanup function
-    return function() {
-      document.title = "usePopcorn"
-    }
-  }, [title])
-
-  return (
-    <div className="details">
-      {/* adding the loader */}
-      {isLoading ? (
-        <Loader />
-      ) : (
-        <>
-          <header>
-            <button className="btn-back" onClick={onCloseMovie}>
-              &larr;
-            </button>
-            <img src={poster} alt={`Poster of ${movie} movie`} />
-            <div className="details-overview">
-              <h2>{title}</h2>
-              <p>
-                {released} &bull; {runtime}
-              </p>
-              <p>{genre}</p>
-              <p>
-                <span>⭐</span>
-                {imdbRating} IMDb rating
-              </p>
-            </div>
-          </header>
-
-          <section>
-            <div className="rating">
-              {!isWatched ? (
-                <>
-                  <StarRating
-                    maxRating={10}
-                    size={24}
-                    onSetRating={setUserRating}
-                  />
-
-                  {/* displays the add to list button only when the user rates the movie */}
-                  {userRating > 0 && (
-                    <button className="btn-add" onClick={handleAdd}>
-                      + Add to list
-                    </button>
-                  )}
-                </>
-              ) : (
-                <p>You rated this movie with {watchedUserRating}⭐ </p>
-              )}
-            </div>
-            <p>
-              <em>{plot}</em>
-            </p>
-            <p>Starring {actors}</p>
-            <p>Directed by {director}</p>
-          </section>
-        </>
-      )}
-      {/* {selectedId} */}
-    </div>
-  );
-}
-
-function WatchedSummary({ watched }) {
-  const avgImdbRating = average(watched.map((movie) => movie.imdbRating));
-  const avgUserRating = average(watched.map((movie) => movie.userRating));
-  const avgRuntime = average(watched.map((movie) => movie.runtime));
-
-  return (
-    <div className="summary">
-      <h2>Movies you watched</h2>
-      <div>
-        <p>
-          <span>#️⃣</span>
-          <span>{watched.length} movies</span>
-        </p>
-        <p>
-          <span>⭐️</span>
-          <span>{avgImdbRating.toFixed(2)}</span>
-        </p>
-        <p>
-          <span>🌟</span>
-          <span>{avgUserRating.toFixed(2)}</span>
-        </p>
-        <p>
-          <span>⏳</span>
-          <span>{avgRuntime} min</span>
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function WatchedMoviesList({ watched, onDelete }) {
-  return (
-    <ul className="list">
-      {watched.map((movie) => (
-        <WatchedMovie movie={movie} key={movie.imdbID} onDelete={onDelete} />
-      ))}
-    </ul>
-  );
-}
-
-function WatchedMovie({ movie, onDelete }) {
-  return (
-    <li>
-      <img src={movie.poster} alt={`${movie.title} poster`} />
-      <h3>{movie.title}</h3>
-      <div>
-        <p>
-          <span>⭐️</span>
-          <span>{movie.imdbRating}</span>
-        </p>
-        <p>
-          <span>🌟</span>
-          <span>{movie.userRating}</span>
-        </p>
-        <p>
-          <span>⏳</span>
-          <span>{movie.runtime} min</span>
-        </p>
-
-        <button className="btn-delete" onClick={() => onDelete(movie.imdbID)}>X</button>
-      </div>
-    </li>
-  );
-}
