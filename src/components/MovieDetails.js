@@ -38,7 +38,7 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
   // console.log(title, released)
 
   // to display the stars and add to list button if the user hasn't selected the movie previously. for this we need the watched array
-  const isWatched = watched.map((movie) => movie.imdbID).includes(selectedId);
+  const isWatched = watched?.map((movie) => movie.imdbID).includes(selectedId);
   // console.log(isWatched);
 
   // to display the number of rating given
@@ -63,22 +63,23 @@ function MovieDetails({ selectedId, onCloseMovie, onAddWatched, watched }) {
     onCloseMovie();
   }
 
+  // moved to useKey.js
   // listening to a keypress
-  useEffect(
-   function () {
-    function callback(e) {
-      if (e.code === 'Escape') {
-        onCloseMovie()
-      }
-    }
-    document.addEventListener('keydown', callback)
+  // useEffect(
+  //  function () {
+  //   function callback(e) {
+  //     if (e.code === 'Escape') {
+  //       onCloseMovie()
+  //     }
+  //   }
+  //   document.addEventListener('keydown', callback)
 
-    // cleanup function to remove the event listener when the component unmounts or re-renders
-    return function() {
-      document.removeEventListener('keydown', callback)
-    }
-   }, [onCloseMovie]
-  )
+  //   // cleanup function to remove the event listener when the component unmounts or re-renders
+  //   return function() {
+  //     document.removeEventListener('keydown', callback)
+  //   }
+  //  }, [onCloseMovie]
+  // )
 
   useEffect(
     function () {
